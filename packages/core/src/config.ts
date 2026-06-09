@@ -86,6 +86,11 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   compaction: ConfigCompaction.Info.pipe(Schema.optional).annotate({
     description: "Conversation compaction behavior",
   }),
+  contextEngine: Schema.Struct({
+    enabled: Schema.Boolean.pipe(Schema.optional),
+  }).pipe(Schema.optional).annotate({
+    description: "Context engine for session-aware context management",
+  }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
   }),

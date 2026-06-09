@@ -8,11 +8,14 @@ import {
   type ProviderErrorEvent,
 } from "@opencode-ai/llm"
 import { Cause, DateTime, Effect, FiberSet, Layer, Option, Schema, Semaphore, Stream } from "effect"
+import { homedir } from "os"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
+import { EventLog, LocalMemoryStore } from "../../context-engine"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
+import path from "path"
 import { ModelV2 } from "../../model"
 import { ProviderV2 } from "../../provider"
 import { QuestionV2 } from "../../question"
@@ -101,6 +104,10 @@ export const layer = Layer.effect(
     const config = yield* Config.Service
     const db = (yield* Database.Service).db
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
+    const configEntries = yield* config.entries()
+    const eventLog = Config.latest(configEntries, "contextEngine")?.enabled === true
+      ? new EventLog(new LocalMemoryStore({ dataDir: path.join(homedir(), ".opencode", "context-engine") }))
+      : undefined
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
       const session = yield* store.get(sessionID)
       if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
@@ -178,6 +185,7 @@ export const layer = Layer.effect(
       const session = yield* getSession(sessionID)
       if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
         return yield* Effect.interrupt
+      if (eventLog) yield* eventLog.logTurnStart(session.id, 0)
       const agent = yield* agents.select(session.agent)
       const initialized = yield* SessionContextEpoch.initialize(
         db,
@@ -251,6 +259,7 @@ export const layer = Layer.effect(
               }
             }
             yield* publish(event)
+            if (eventLog && event.type === "tool-call") yield* eventLog.logToolCall(session.id, event.name, event.id, event.input)
             if (event.type !== "tool-call" || event.providerExecuted) return
             needsContinuation = true
             const assistantMessageID = yield* publisher.assistantMessageID(event.id)
@@ -264,15 +273,18 @@ export const layer = Layer.effect(
                 }),
               ).pipe(
                 Effect.flatMap((settlement) =>
-                  publish(
-                    LLMEvent.toolResult({
-                      id: event.id,
-                      name: event.name,
-                      result: settlement.result,
-                      output: settlement.output,
-                    }),
-                    settlement.outputPaths ?? [],
-                  ),
+                  Effect.gen(function* () {
+                    yield* publish(
+                      LLMEvent.toolResult({
+                        id: event.id,
+                        name: event.name,
+                        result: settlement.result,
+                        output: settlement.output,
+                      }),
+                      settlement.outputPaths ?? [],
+                    )
+                    if (eventLog) yield* eventLog.logToolResult(session.id, event.name, event.id, settlement.result)
+                  }),
                 ),
               ),
             ).pipe(FiberSet.run(toolFibers))

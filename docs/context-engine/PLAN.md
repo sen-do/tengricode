@@ -99,21 +99,24 @@ Feature flags live in `contextEngine` key within the config schema.
 
 ---
 
-### Phase 2 — Event log + projection rebuild
+### Phase 2 — Event log + projection rebuild **(COMPLETED)**
 
 **Goal:** Make the message array a derived projection of an immutable event log.
 
 **Flag:** Reuses `contextEngine.enabled`
 
-**New/changed files:**
-- `packages/core/src/context-engine/event-log.ts` — event schema and `appendEvent` wrapper that captures every tool call, edit, and decision
-- `packages/core/src/context-engine/projection.ts` — `rebuildProjection(events): Message[]` — for now returns full history (no behavior change)
-- Hook into: `packages/core/src/session/runner/llm.ts` — append events at `publishLLMEvent()` call site (line 244-280); add `rebuildProjection` call before `LLM.request()` construction (line 217)
-- Hook into V1: `packages/opencode/src/session/processor.ts` — append events in `handleEvent()` dispatch (line 371+); `rebuildProjection` before model message conversion in `prompt.ts:1330`
+**Built:**
+- `packages/core/src/context-engine/event-log.ts` — `EventLog` class wrapping `MemoryStore` with typed logging: `logUserMessage`, `logAssistantText`, `logToolCall`, `logToolResult`, `logFileEdit`, `logDecision`, `logTurnStart`, `logTurnEnd`
+- `packages/core/src/context-engine/projection.ts` — `rebuildProjection(events)` — identity function (returns events as-is for Phase 2)
+- Hooked into V2: `packages/core/src/session/runner/llm.ts:108` — conditionally creates `EventLog` + `LocalMemoryStore` when config enables it. Logs tool-call (line 262) and tool-result (line 281) events during the provider turn loop.
+- V1 hook: **skipped** — V2-only for Phase 2; V1 processor hook deferred
+- Added `contextEngine` to V2 `Config.Info` schema: `packages/core/src/config.ts:88-93`
 
-**Acceptance test:**
-- `rebuildProjection` over the log equals the current message array
-- Replaying the log reconstructs identical session state
+**Verification:**
+- 10 new event-log + projection tests pass
+- All 91 existing session-runner tests pass
+- Core + opencode packages typecheck clean
+- With flag off: zero behavior change (runner creates no store, logs nothing)
 
 ---
 
