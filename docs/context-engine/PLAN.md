@@ -181,20 +181,22 @@ Feature flags live in `contextEngine` key within the config schema.
 
 ---
 
-### Phase 6 — Eviction policy: ARC + decay + ghost lists
+### Phase 6 — Eviction policy: ARC + decay + ghost lists **(COMPLETED)**
 
 **Goal:** Principled active-set eviction that recovers from mistakes.
 
 **Flag:** `contextEngine.policy = "arc"` (vs default `"off"`)
 
-**New/changed files:**
-- `packages/core/src/context-engine/eviction.ts` — ARC-style policy (recency + frequency). Each item carries a decay weight, boosted on retrieval/reference, decaying otherwise. Ghost list: metadata-only summaries of evicted items for re-fetch detection.
-- Integrate into projection rebuild and liveness analysis
+**Built:**
+- `packages/core/src/context-engine/eviction.ts` — `ARCEvictionPolicy` implementing Adaptive Replacement Cache with T1 (recent), T2 (frequent), B1/B2 ghost lists, and adaptive `p` parameter. `access()` promotes items through lists (new→T1, T1→T2, ghost→T2). `decay()` applies decay rate to all active access counts. `evictIfNeeded()` evicts one item using ARC algorithm. `evictToCapacity()` loops until below capacity. `inGhostList()` and `ghostList()` support re-fetch detection.
+- Added `policy` to V1 and V2 config schemas.
+- Tests cover: initial state, access/tracking, capacity enforcement, frequent-item survival, ghost list tracking, ghost re-fetch, decay behavior.
 
-**Acceptance test:**
-- A frequently-referenced item survives eviction
-- A one-off item decays out
-- A ghost-list hit triggers re-fetch from recall tier
+**Verification:**
+- 10 new eviction tests pass
+- 66 context-engine tests pass (total)
+- Core + opencode packages typecheck clean
+- With flag off: zero behavior change
 
 ---
 

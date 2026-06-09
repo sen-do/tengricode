@@ -177,6 +177,9 @@ export const Info = Schema.Struct({
       "recall.semantic": Schema.optional(Schema.Boolean).annotate({
         description: "Enable semantic search for the recall tier (requires local Ollama with nomic-embed-text)",
       }),
+      policy: Schema.optional(Schema.Literals(["off", "arc"])).annotate({
+        description: "Eviction policy: 'off' disables, 'arc' uses Adaptive Replacement Cache with decay and ghost lists",
+      }),
     }),
   ),
   experimental: Schema.optional(

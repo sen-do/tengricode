@@ -92,6 +92,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     liveness: Schema.Boolean.pipe(Schema.optional),
     recall: Schema.Boolean.pipe(Schema.optional),
     "recall.semantic": Schema.Boolean.pipe(Schema.optional),
+    policy: Schema.Literals(["off", "arc"]).pipe(Schema.optional),
   }).pipe(Schema.optional).annotate({
     description: "Context engine for session-aware context management",
   }),

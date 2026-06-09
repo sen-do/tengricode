@@ -17,4 +17,5 @@ export {
 export { AnchorRegistry, Anchor } from "./anchor"
 export { analyzeLiveness, consolidateEvents } from "./liveness"
 export { eventToRecords, storeDeadEvents, retrieve, retrieveSemantic } from "./recall"
+export { ARCEvictionPolicy } from "./eviction"
 export { Instrumentation, ProbeScore, TokenCount, ProbeType } from "./instrumentation"
