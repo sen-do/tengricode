@@ -1,5 +1,4 @@
-import type { ContextEvent } from "./store"
-import { ContextEvent as Event } from "./store"
+import { ContextEvent } from "./store"
 
 function dataOf(event: ContextEvent): Record<string, unknown> {
   return event.data as Record<string, unknown>
@@ -8,153 +7,120 @@ function dataOf(event: ContextEvent): Record<string, unknown> {
 const ALWAYS_LIVE = new Set(["user-message", "turn-start", "turn-end", "decision"])
 
 export function analyzeLiveness(events: readonly ContextEvent[]): { readonly live: ContextEvent[]; readonly dead: ContextEvent[] } {
-  const toolCallIds = new Set<string>()
   const lastReadByFile = new Map<string, string>()
 
-  for (let i = events.length - 1; i >= 0; i--) {
-    const evt = events[i]
+  // Walk backwards to find the last read of each file before any edit supersedes it
+  for (const evt of Array.from(events).reverse()) {
+    if (evt.type !== "tool-call") continue
     const data = dataOf(evt)
-
-    if (evt.type === "tool-call") {
-      toolCallIds.add(data.toolCallId as string)
-      if (data.toolName === "read") {
-        const path = data.input && typeof data.input === "object" ? (data.input as Record<string, unknown>).filePath as string | undefined : undefined
-        if (path && !lastReadByFile.has(path)) lastReadByFile.set(path, evt.id)
-      }
-    }
+    if (data.toolName !== "read") continue
+    const input = data.input
+    const path = input && typeof input === "object" ? (input as Record<string, unknown>).filePath as string | undefined : undefined
+    if (path && !lastReadByFile.has(path)) lastReadByFile.set(path, evt.id)
   }
 
+  // Walk backwards again to find file-edit events and mark superseded reads as dead
   const deadIds = new Set<string>()
+  for (const evt of Array.from(events).reverse()) {
+    if (evt.type !== "file-edit") continue
+    const path = dataOf(evt).filePath as string
+    const supersededReadId = lastReadByFile.get(path)
+    if (!supersededReadId) continue
+    deadIds.add(supersededReadId)
+    const supersededRead = events.find((x) => x.id === supersededReadId)
+    if (!supersededRead) continue
+    const supersededToolCallId = dataOf(supersededRead).toolCallId as string
+    events
+      .filter((e) => e.type === "tool-result" && dataOf(e).toolCallId === supersededToolCallId)
+      .forEach((e) => deadIds.add(e.id))
+  }
 
-  for (let i = events.length - 1; i >= 0; i--) {
-    const evt = events[i]
-    const data = dataOf(evt)
-
-    if (evt.type === "file-edit") {
-      const path = data.filePath as string
-      const supersededReadId = lastReadByFile.get(path)
-      if (supersededReadId) {
-        deadIds.add(supersededReadId)
-        const supersededRead = events.find((x) => x.id === supersededReadId)
-        if (supersededRead) {
-          const supersededToolCallId = dataOf(supersededRead).toolCallId as string
-          for (const e of events) {
-            if (e.type === "tool-result" && dataOf(e).toolCallId === supersededToolCallId)
-              deadIds.add(e.id)
-          }
+  // Partition events into live and dead
+  return events.reduce(
+    (acc, evt) => {
+      if (deadIds.has(evt.id)) {
+        acc.dead.push(evt)
+        return acc
+      }
+      if (ALWAYS_LIVE.has(evt.type)) {
+        acc.live.push(evt)
+        return acc
+      }
+      if (evt.type === "tool-call" || evt.type === "tool-result") {
+        if (deadIds.has(dataOf(evt).toolCallId as string)) {
+          acc.dead.push(evt)
+          return acc
         }
       }
-    }
-  }
-
-  const live: ContextEvent[] = []
-  const dead: ContextEvent[] = []
-
-  for (const evt of events) {
-    if (deadIds.has(evt.id) || (evt.type === "tool-result" && deadIds.has(dataOf(evt).toolCallId as string))) {
-      dead.push(evt)
-      continue
-    }
-    if (ALWAYS_LIVE.has(evt.type)) {
-      live.push(evt)
-      continue
-    }
-    if (evt.type === "tool-call") {
-      const toolId = dataOf(evt).toolCallId as string
-      if (deadIds.has(toolId)) {
-        dead.push(evt)
-        continue
-      }
-    }
-    live.push(evt)
-  }
-
-  return { live, dead }
+      acc.live.push(evt)
+      return acc
+    },
+    { live: [] as ContextEvent[], dead: [] as ContextEvent[] },
+  )
 }
 
 export function consolidateEvents(events: readonly ContextEvent[]): ContextEvent[] {
   if (events.length === 0) return []
 
   const result: ContextEvent[] = []
-  let pendingReads: ContextEvent[] = []
-  let pendingEdit: ContextEvent | undefined
-  let pendingTest: ContextEvent | undefined
+  const pending = { reads: [] as ContextEvent[], edit: undefined as ContextEvent | undefined, test: undefined as ContextEvent | undefined }
+
+  const readPath = (r: ContextEvent) => {
+    const d = dataOf(r)
+    const input = d.input as Record<string, unknown> | undefined
+    return input && typeof input.filePath === "string" ? input.filePath : undefined
+  }
+
+  const isRead = (evt: ContextEvent) => evt.type === "tool-call" && dataOf(evt).toolName === "read"
+  const isEdit = (evt: ContextEvent) => evt.type === "tool-call" && (dataOf(evt).toolName === "edit" || dataOf(evt).toolName === "write" || dataOf(evt).toolName === "apply_patch")
+  const isTest = (evt: ContextEvent) => {
+    if (evt.type !== "tool-call" || dataOf(evt).toolName !== "bash") return false
+    const input = dataOf(evt).input as Record<string, unknown> | undefined
+    return typeof input?.command === "string" && input.command.includes("test")
+  }
+  const isResult = (evt: ContextEvent) => evt.type === "tool-result"
+
+  const flush = (evt: ContextEvent) => {
+    const filePaths = pending.reads.map(readPath).filter((p): p is string => p !== undefined)
+    const summary = filePaths.length > 0
+      ? `Read and modified ${filePaths.join(", ")}${pending.test ? ", tests passing" : ""}`
+      : `Completed file operations${pending.test ? ", tests passing" : ""}`
+    const lastEvt = pending.test ?? pending.edit ?? pending.reads[pending.reads.length - 1]
+    result.push(
+      ContextEvent.make({
+        id: `ctx_consolidated_${evt.id}`,
+        session_id: evt.session_id,
+        type: "file-edit",
+        timestamp: evt.timestamp,
+        data: { filePaths, summary },
+      }),
+    )
+    pending.reads = []
+    pending.edit = undefined
+    pending.test = undefined
+  }
 
   for (const evt of events) {
-    const data = dataOf(evt)
+    if (isRead(evt)) { pending.reads.push(evt); continue }
+    if (isResult(evt) && pending.reads.length > 0) continue
+    if (isEdit(evt)) { pending.edit = evt; continue }
+    if (isResult(evt) && pending.edit) continue
+    if (isTest(evt)) { pending.test = evt; continue }
+    if (isResult(evt) && pending.test) continue
 
-    if (evt.type === "tool-call" && data.toolName === "read") {
-      pendingReads.push(evt)
-      continue
-    }
-
-    if (evt.type === "tool-result" && pendingReads.length > 0) {
-      continue
-    }
-
-    if (evt.type === "tool-call" && (data.toolName === "edit" || data.toolName === "write" || data.toolName === "apply_patch")) {
-      pendingEdit = evt
-      continue
-    }
-
-    if (evt.type === "tool-result" && pendingEdit !== undefined) {
-      continue
-    }
-
-    if (evt.type === "tool-call" && data.toolName === "bash") {
-      const input = data.input as Record<string, unknown> | undefined
-      if (input && typeof input.command === "string" && input.command.includes("test")) {
-        pendingTest = evt
-        continue
-      }
-    }
-
-    if (evt.type === "tool-result" && pendingTest !== undefined) {
-      continue
-    }
-
-    if (pendingReads.length > 0 || pendingEdit !== undefined) {
-      const filePaths = pendingReads
-        .map((r) => {
-          const d = dataOf(r)
-          return d.input && typeof d.input === "object" ? (d.input as Record<string, unknown>).filePath as string | undefined : undefined
-        })
-        .filter((p): p is string => p !== undefined)
-      const summary = filePaths.length > 0
-        ? `Read and modified ${filePaths.join(", ")}${pendingTest !== undefined ? ", tests passing" : ""}`
-        : `Completed file operations${pendingTest !== undefined ? ", tests passing" : ""}`
-      const lastEvent = pendingTest ?? pendingEdit ?? pendingReads[pendingReads.length - 1]
-      result.push(
-        Event.make({
-          id: `ctx_consolidated_${evt.id}`,
-          session_id: evt.session_id,
-          type: "file-edit",
-          timestamp: evt.timestamp,
-          data: { filePaths, summary },
-        }),
-      )
-      pendingReads = []
-      pendingEdit = undefined
-      pendingTest = undefined
-    }
-
+    if (pending.reads.length > 0 || pending.edit) flush(evt)
     result.push(evt)
   }
 
-  if (pendingReads.length > 0 || pendingEdit !== undefined) {
-    const filePaths = pendingReads
-      .map((r) => {
-        const d = dataOf(r)
-        return d.input && typeof d.input === "object" ? (d.input as Record<string, unknown>).filePath as string | undefined : undefined
-      })
-      .filter((p): p is string => p !== undefined)
-    const lastEvent = pendingEdit ?? pendingReads[pendingReads.length - 1]
+  if (pending.reads.length > 0 || pending.edit) {
+    const filePaths = pending.reads.map(readPath).filter((p): p is string => p !== undefined)
+    const lastEvt = pending.edit ?? pending.reads[pending.reads.length - 1]
     result.push(
-      Event.make({
-        id: `ctx_consolidated_${lastEvent.id}`,
-        session_id: lastEvent.session_id,
+      ContextEvent.make({
+        id: `ctx_consolidated_${lastEvt.id}`,
+        session_id: lastEvt.session_id,
         type: "file-edit",
-        timestamp: lastEvent.timestamp,
+        timestamp: lastEvt.timestamp,
         data: { filePaths, summary: `Read ${filePaths.join(", ")}` },
       }),
     )
