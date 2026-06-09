@@ -90,6 +90,8 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     enabled: Schema.Boolean.pipe(Schema.optional),
     summary: Schema.Literals(["off", "structured"]).pipe(Schema.optional),
     liveness: Schema.Boolean.pipe(Schema.optional),
+    recall: Schema.Boolean.pipe(Schema.optional),
+    "recall.semantic": Schema.Boolean.pipe(Schema.optional),
   }).pipe(Schema.optional).annotate({
     description: "Context engine for session-aware context management",
   }),

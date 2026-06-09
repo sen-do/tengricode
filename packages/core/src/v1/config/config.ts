@@ -171,6 +171,12 @@ export const Info = Schema.Struct({
       liveness: Schema.optional(Schema.Boolean).annotate({
         description: "Enable liveness-based eviction: distinguish causally active items from completed ones",
       }),
+      recall: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable local recall tier: completed work is stored and retrievable via structured search",
+      }),
+      "recall.semantic": Schema.optional(Schema.Boolean).annotate({
+        description: "Enable semantic search for the recall tier (requires local Ollama with nomic-embed-text)",
+      }),
     }),
   ),
   experimental: Schema.optional(

@@ -16,4 +16,5 @@ export {
 } from "./summary"
 export { AnchorRegistry, Anchor } from "./anchor"
 export { analyzeLiveness, consolidateEvents } from "./liveness"
+export { eventToRecords, storeDeadEvents, retrieve, retrieveSemantic } from "./recall"
 export { Instrumentation, ProbeScore, TokenCount, ProbeType } from "./instrumentation"

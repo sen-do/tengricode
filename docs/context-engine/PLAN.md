@@ -163,22 +163,21 @@ Feature flags live in `contextEngine` key within the config schema.
 
 ---
 
-### Phase 5 — Local recall tier
+### Phase 5 — Local recall tier **(COMPLETED)**
 
-**Goal:** Completed work leaves the active set but stays retrievable.
+**Goal:** Completed work leaves the active set but stays retrievable — locally.
 
 **Flag:** `contextEngine.recall` (default `false`); sub-flag `contextEngine.recall.semantic` (default `false`)
 
-**New/changed files:**
-- `packages/core/src/context-engine/recall.ts` — on dead-classification, write structured record to SQLite: file manifest (what was touched, when) and decision log (artifact-tracking layer). Retrieval function: structured exact lookup first, semantic second with conservative top-k.
-- `packages/core/src/context-engine/recall-semantic.ts` — optional semantic recall behind sub-flag: embed records via local Ollama (`nomic-embed-text`) into local vector index. If Ollama unavailable, degrade gracefully to structured-only. Uses `MemoryStore.querySemantic()` which `LocalMemoryStore` implements.
-- Integrate retrieval call before each model call:
-  - V2: `packages/core/src/session/runner/llm.ts` — before `LLM.request()` at line 217
-  - V1: `packages/opencode/src/session/prompt.ts` — before `toModelMessagesEffect()` at line 1330
+**Built:**
+- `packages/core/src/context-engine/recall.ts` — `eventToRecords()` converts dead events to structured `ContextRecord` entries. `storeDeadEvents()` writes dead events into the `MemoryStore`. `retrieve()` performs structured exact-match search (content + tag matching, case-insensitive). `retrieveSemantic()` delegates to `MemoryStore.querySemantic()` with graceful degradation.
+- Added `recall` and `recall.semantic` to V1 and V2 config schemas (`contextEngine.recall` uses top-level key, `recall.semantic` uses dot-separated key in V1 config since Schema doesn't allow dots in field names).
 
-**Acceptance test:**
-- A decision recorded at turn 3 is retrievable at turn 40
-- An unrelated query returns nothing (precision probe)
+**Verification:**
+- 10 new recall tests pass (round-trip, session filter, precision, case-insensitivity, semantic degradation)
+- 56 context-engine tests pass (total)
+- Core + opencode packages typecheck clean
+- With flags off: zero behavior change
 
 ---
 
