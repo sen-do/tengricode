@@ -128,7 +128,7 @@ export class LocalMemoryStore implements MemoryStore {
       }
       query += ` ORDER BY r.timestamp DESC`
 
-      const rows = this.db.prepare(query).all(...(params as any[])) as Record<string, unknown>[]
+      const rows = this.db.prepare(query).all(...(params as (string | number | null)[])) as Record<string, unknown>[]
       return rows.map((row) => this.rowToRecord(row))
     })
   }

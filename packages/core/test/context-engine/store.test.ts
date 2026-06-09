@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { Effect } from "effect"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import {

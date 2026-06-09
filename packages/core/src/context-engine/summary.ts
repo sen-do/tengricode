@@ -42,19 +42,14 @@ function dedupeStrings(items: readonly string[]): string[] {
 
 function mergeDecisions(existing: readonly Decision[], incoming: readonly Decision[]): Decision[] {
   const seen = new Set(existing.map((d) => d.decision.toLowerCase()))
-  const merged = [...existing]
-  for (const d of incoming) {
-    if (seen.has(d.decision.toLowerCase())) continue
-    seen.add(d.decision.toLowerCase())
-    merged.push(Decision.make({ decision: d.decision, rationale: d.rationale }))
-  }
-  return merged
+  const novel = incoming.filter((d) => !seen.has(d.decision.toLowerCase()))
+  novel.forEach((d) => seen.add(d.decision.toLowerCase()))
+  return [...existing, ...novel]
 }
 
 function mergeFiles(existing: readonly FileEntry[], incoming: readonly FileEntry[]): FileEntry[] {
-  const map = new Map<string, string>()
-  for (const f of existing) map.set(f.path, f.reason)
-  for (const f of incoming) map.set(f.path, f.reason)
+  const map = new Map(existing.map((f) => [f.path, f.reason]))
+  incoming.forEach((f) => map.set(f.path, f.reason))
   return [...map.entries()].map(([path, reason]) => FileEntry.make({ path, reason }))
 }
 
@@ -130,47 +125,32 @@ export function buildStructuredPrompt(input: {
 }
 
 export function serializeSummary(summary: StructuredSummary): string {
-  const lines: string[] = []
-  lines.push("## Goal")
-  for (const item of summary.goal) lines.push(`- ${item}`)
-  if (summary.goal.length === 0) lines.push("- (none)")
+  const section = (heading: string, items: readonly string[]) =>
+    [heading, ...items.map((item) => `- ${item}`), ...(items.length === 0 ? ["- (none)"] : [])].join("\n")
 
-  lines.push("")
-  lines.push("## Constraints & Preferences")
-  for (const item of summary.constraints) lines.push(`- ${item}`)
-  if (summary.constraints.length === 0) lines.push("- (none)")
+  const subSection = (heading: string, items: readonly string[]) =>
+    [heading, ...items.map((item) => `- ${item}`), ...(items.length === 0 ? ["- (none)"] : [])].join("\n")
 
-  lines.push("")
-  lines.push("## Progress")
-  lines.push("### Done")
-  for (const item of summary.done) lines.push(`- ${item}`)
-  if (summary.done.length === 0) lines.push("- (none)")
-  lines.push("### In Progress")
-  for (const item of summary.inProgress) lines.push(`- ${item}`)
-  if (summary.inProgress.length === 0) lines.push("- (none)")
-  lines.push("### Blocked")
-  for (const item of summary.blocked) lines.push(`- ${item}`)
-  if (summary.blocked.length === 0) lines.push("- (none)")
-
-  lines.push("")
-  lines.push("## Key Decisions")
-  for (const d of summary.decisions) lines.push(`- ${d.decision}: ${d.rationale}`)
-  if (summary.decisions.length === 0) lines.push("- (none)")
-
-  lines.push("")
-  lines.push("## Next Steps")
-  for (const item of summary.nextSteps) lines.push(`- ${item}`)
-  if (summary.nextSteps.length === 0) lines.push("- (none)")
-
-  lines.push("")
-  lines.push("## Critical Context")
-  for (const item of summary.criticalContext) lines.push(`- ${item}`)
-  if (summary.criticalContext.length === 0) lines.push("- (none)")
-
-  lines.push("")
-  lines.push("## Relevant Files")
-  for (const f of summary.relevantFiles) lines.push(`- ${f.path}: ${f.reason}`)
-  if (summary.relevantFiles.length === 0) lines.push("- (none)")
-
-  return lines.join("\n")
+  return [
+    section("## Goal", summary.goal),
+    section("## Constraints & Preferences", summary.constraints),
+    "## Progress",
+    subSection("### Done", summary.done),
+    subSection("### In Progress", summary.inProgress),
+    subSection("### Blocked", summary.blocked),
+    section(
+      "## Key Decisions",
+      summary.decisions.length > 0
+        ? summary.decisions.map((d) => `${d.decision}: ${d.rationale}`)
+        : [],
+    ),
+    section("## Next Steps", summary.nextSteps),
+    section("## Critical Context", summary.criticalContext),
+    section(
+      "## Relevant Files",
+      summary.relevantFiles.length > 0
+        ? summary.relevantFiles.map((f) => `${f.path}: ${f.reason}`)
+        : [],
+    ),
+  ].join("\n\n")
 }

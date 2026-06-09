@@ -44,6 +44,6 @@ export class AnchorRegistry {
 
   restore(items: readonly Anchor[]): void {
     this.items.clear()
-    for (const item of items) this.items.set(item.id, item)
+    items.forEach((item) => this.items.set(item.id, item))
   }
 }

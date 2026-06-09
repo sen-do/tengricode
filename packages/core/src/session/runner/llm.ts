@@ -103,8 +103,8 @@ export const layer = Layer.effect(
     const skillGuidance = yield* SkillGuidance.Service
     const config = yield* Config.Service
     const db = (yield* Database.Service).db
-    const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const configEntries = yield* config.entries()
+    const compaction = SessionCompaction.make({ events, llm, config: configEntries })
     const eventLog = Config.latest(configEntries, "contextEngine")?.enabled === true
       ? new EventLog(new LocalMemoryStore({ dataDir: path.join(homedir(), ".opencode", "context-engine") }))
       : undefined
