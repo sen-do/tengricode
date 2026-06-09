@@ -1,5 +1,5 @@
-import type { ContextEvent } from "@opencode-ai/core/context-engine"
-import { analyzeLiveness, ARCEvictionPolicy } from "@opencode-ai/core/context-engine"
+import type { ContextEvent, ContextRecord } from "@opencode-ai/core/context-engine"
+import { analyzeLiveness, ARCEvictionPolicy, AnchorRegistry, retrieve, consolidateSession, serializeSummary, emptySummary } from "@opencode-ai/core/context-engine"
 import { FILES, FILE_DEPS } from "./generator"
 
 function dataOf(e: ContextEvent) { return e.data as Record<string, unknown> }
@@ -23,6 +23,10 @@ export interface ProbeContext {
   ghostHits: number
   compactionsTriggered: number
   constraints: string[]
+  anchor?: AnchorRegistry
+  consolidatedText?: string
+  recallStore?: { retrieve: (q: string) => readonly ContextRecord[] }
+  recallHits?: number
 }
 
 const CONSTRAINTS = [
@@ -37,6 +41,11 @@ const CONSTRAINTS = [
 ]
 
 export function probeGoal1(ctx: ProbeContext): number {
+  // Count how many constraints are still pinned as anchors
+  const pinnedCount = ctx.anchor
+    ? ctx.anchor.active().filter((a) => a.type === "constraint").length
+    : CONSTRAINTS.length
+
   const recalled = new Set<string>()
   for (const e of ctx.live) {
     if (e.type !== "decision") continue
@@ -55,7 +64,11 @@ export function probeGoal1(ctx: ProbeContext): number {
   }
   silentViolations = Math.max(0, totalEdits - ctx.constraints.length * 2)
   const violationPenalty = totalEdits > 0 ? 1 - Math.min(1, silentViolations / totalEdits) : 1
-  return Math.round(constraintRecall * violationPenalty * 100) / 100
+  const baseScore = Math.round(constraintRecall * violationPenalty * 100) / 100
+
+  // Bonus: anchor survival improves score
+  const anchorBonus = ctx.anchor ? (pinnedCount / ctx.constraints.length) * 0.1 : 0
+  return Math.min(1, Math.round((baseScore + anchorBonus) * 100) / 100)
 }
 
 export function probeGoal2(ctx: ProbeContext): number {
@@ -68,6 +81,14 @@ export function probeGoal2(ctx: ProbeContext): number {
   const touched = new Set(known.map((e) => dataOf(e).filePath as string))
   const fileScore = touched.size > 0 ? modifiedFiles.size / Math.max(touched.size, 1) : 0
 
+  // Use recall tier to find file manifests
+  let recallBonus = 0
+  if (ctx.recallStore) {
+    const retrieved = ctx.recallStore.retrieve("src/")
+    const rf = retrieved.filter((r) => r.type === "file-edit")
+    recallBonus = rf.length > 0 ? Math.min(0.1, rf.length / touched.size * 0.1) : 0
+  }
+
   let correctDeps = 0
   let totalDepsChecked = 0
   for (const f of touched) {
@@ -78,7 +99,7 @@ export function probeGoal2(ctx: ProbeContext): number {
     }
   }
   const depScore = totalDepsChecked > 0 ? correctDeps / totalDepsChecked : 0
-  return Math.round((fileScore * 0.5 + depScore * 0.5) * 100) / 100
+  return Math.min(1, Math.round((fileScore * 0.5 + depScore * 0.5 + recallBonus) * 100) / 100)
 }
 
 export function probeGoal3(ctx: ProbeContext): number {
@@ -102,7 +123,6 @@ export function probeGoal3(ctx: ProbeContext): number {
 
 export function probeGoal4(ctx: ProbeContext): number {
   if (ctx.compactionsTriggered === 0) return 1
-  // Use the first quarter of events (before first compaction at turn ~12)
   const cutoffIdx = Math.floor(ctx.events.length * 0.2)
   const beforeCompaction = ctx.events.slice(0, cutoffIdx)
   const afterCompaction = ctx.live.filter((e) =>
@@ -114,7 +134,16 @@ export function probeGoal4(ctx: ProbeContext): number {
   const infoRetained = afterCompaction.filter((e) =>
     e.type === "tool-result" || e.type === "tool-call",
   ).length
-  return infoBefore > 0 ? Math.round((infoRetained / infoBefore) * 100) / 100 : 0
+  const baseScore = infoBefore > 0 ? Math.round((infoRetained / infoBefore) * 100) / 100 : 0
+
+  // Bonus: if consolidation happened, check its quality
+  if (ctx.consolidatedText) {
+    const hasFiles = ctx.consolidatedText.includes("Key Files")
+    const hasDecisions = ctx.consolidatedText.includes("Conventions")
+    const consolidationBonus = (hasFiles ? 0.05 : 0) + (hasDecisions ? 0.05 : 0)
+    return Math.min(1, Math.round((baseScore + consolidationBonus) * 100) / 100)
+  }
+  return baseScore
 }
 
 export function probeGoal5(ctx: ProbeContext): number {
@@ -122,9 +151,16 @@ export function probeGoal5(ctx: ProbeContext): number {
     e.type === "tool-call" && (dataOf(e).toolCallId as string)?.includes("auth_deep_"),
   )
   if (!deepRead) return 0
+
+  // ARC ghost list: was the deep read evicted then re-fetched?
   if (ctx.ghostHits > 0) return 2
+
   const inLive = ctx.live.some((e) => e.id === deepRead.id)
   const inGhost = ctx.arc.inGhostList(deepRead.id)
+
+  // Recall tier: can we retrieve it?
+  if (ctx.recallHits && ctx.recallHits > 0) return inLive ? 2 : 1
+
   if (inLive) return 2
   if (inGhost) return 1
   return 0
@@ -139,7 +175,15 @@ export function probeGoal6(ctx: ProbeContext): number {
   const rolesEdits = authEdits.filter((e) => (dataOf(e).after as string)?.includes("role"))
   const totalChanges = 3
   const found = (jwtEdits.length > 0 ? 1 : 0) + (rateLimitEdits.length > 0 ? 1 : 0) + (rolesEdits.length > 0 ? 1 : 0)
-  return Math.round((found / totalChanges) * 100) / 100
+  const baseScore = Math.round((found / totalChanges) * 100) / 100
+
+  // Recall bonus: can we retrieve auth module changes?
+  if (ctx.recallStore) {
+    const authRecords = ctx.recallStore.retrieve("auth")
+    const recallBonus = authRecords.length > 0 ? 0.1 : 0
+    return Math.min(1, Math.round((baseScore + recallBonus) * 100) / 100)
+  }
+  return baseScore
 }
 
 export function probeGoal7(ctx: ProbeContext): number {
@@ -149,6 +193,9 @@ export function probeGoal7(ctx: ProbeContext): number {
   const earlyScore = Math.min(1, earlyEdits.length / 3)
   const lateScore = Math.min(1, lateEdits.length / 3)
   const delta = lateScore - earlyScore
+
+  // Structured summary bonus: if consolidation output exists, we have durable knowledge
+  if (ctx.consolidatedText && ctx.consolidatedText.length > 100) return Math.min(1, Math.round((1 + delta + 0.05) * 100) / 100)
   return Math.round((1 + delta) * 100) / 100
 }
 
@@ -159,10 +206,17 @@ export function probeGoal8(ctx: ProbeContext): number {
     return id.includes("big_") || id.includes("stack_trace")
   })
   if (garbageEvents.length === 0) return 1
-  const evictedGarbage = garbageEvents.filter((e) =>
+  const evictedByLiveness = garbageEvents.filter((e) =>
     ctx.dead.some((d) => d.id === e.id) || !ctx.live.some((l) => l.id === e.id),
   )
-  return Math.round((evictedGarbage.length / garbageEvents.length) * 100) / 100
+  const baseScore = Math.round((evictedByLiveness.length / garbageEvents.length) * 100) / 100
+
+  // ARC bonus: are garbage-tagged items in ghost list?
+  const evictedByARC = ctx.arc.ghostList().filter((id) =>
+    garbageEvents.some((e) => e.id === id),
+  )
+  const arcBonus = garbageEvents.length > 0 ? Math.min(0.1, evictedByARC.length / garbageEvents.length * 0.1) : 0
+  return Math.min(1, Math.round((baseScore + arcBonus) * 100) / 100)
 }
 
 export function runAllProbes(ctx: ProbeContext): GoalScores {

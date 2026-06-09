@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { runStressTest } from "./harness"
+import { runStressTest, runJudgeEngine } from "./harness"
 
 describe("context engine stress test", () => {
   test("produces valid comparison report", () => {
@@ -77,4 +77,33 @@ describe("context engine stress test", () => {
     // Engine should be more token-efficient due to liveness filtering
     expect(engineFinal).toBeLessThanOrEqual(stockFinal * 1.1)
   })
+})
+
+describe("context engine stress test — judge mode", () => {
+  test("LLM judge scores all 8 goals with valid ranges", async () => {
+    const key = process.env["DEEPSEEK_API_KEY"]
+    if (!key) {
+      console.log("  [skip] DEEPSEEK_API_KEY not set — set it to run LLM judge probes")
+      return
+    }
+
+    const scores = await runJudgeEngine()
+
+    // All scores should be valid numbers in expected ranges
+    for (const key of Object.keys(scores) as Array<keyof typeof scores>) {
+      const v = scores[key]
+      expect(typeof v).toBe("number")
+      expect(v).toBeGreaterThanOrEqual(-1)
+      expect(v).toBeLessThanOrEqual(3)
+
+      // Goals 3 and 5 can be 0-2, others 0-1
+      if (key === "goal_3" || key === "goal_5") {
+        expect(v).toBeLessThanOrEqual(2)
+      } else {
+        expect(v).toBeLessThanOrEqual(1)
+      }
+    }
+
+    console.log("  Judge scores:", JSON.stringify(scores))
+  }, 120000) // 2-minute timeout for 8 parallel API calls
 })
