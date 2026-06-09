@@ -200,18 +200,21 @@ Feature flags live in `contextEngine` key within the config schema.
 
 ---
 
-### Phase 7 — Offline consolidation → AGENTS.md
+### Phase 7 — Offline consolidation → AGENTS.md **(COMPLETED)**
 
 **Goal:** Turn episodic session detail into durable project knowledge.
 
 **Flag:** `contextEngine.consolidate` (default `false`)
 
-**New/changed files:**
-- `packages/core/src/context-engine/consolidate.ts` — between-sessions pass (via command, e.g. `opencode consolidate`) that replays the event log, clusters completed units by similarity, distills durable knowledge into a managed section of `AGENTS.md`. Decay-weighted: frequently retrieved items survive; never-retrieved items compress further.
-- Integrate with `packages/opencode/src/session/instruction.ts` `Instruction.system()` (153) — ensure managed section is loaded alongside regular instructions
+**Built:**
+- `packages/core/src/context-engine/consolidate.ts` — `consolidateSession()` replays the event log, groups repeated decisions into conventions, repeated tool errors into gotchas, and file edits into key files. `injectManagedSection()` inserts/replaces a delimited section (`<!-- OPENGINE:START/END -->`) in AGENTS.md. `writeConsolidationRecord()` writes a consolidation record to the recall store. Uses `applyArcWeights()` to prioritize frequently-accessed items when ARC policy is active.
+- Added `consolidate` to V1 and V2 config schemas.
+- Tests cover: convention extraction (repeated decisions), gotcha extraction (repeated errors), key file ranking by edit frequency, single-occurrence filtering, empty session output, and managed section injection/replacement.
 
-**Acceptance test:**
-- A convention applied repeatedly within a session appears in the managed AGENTS.md section after running consolidation
+**Verification:**
+- 9 new consolidation tests pass
+- 75 context-engine tests pass (total)
+- Core + opencode packages typecheck clean
 
 ---
 

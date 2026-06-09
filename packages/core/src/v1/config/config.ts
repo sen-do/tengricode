@@ -180,6 +180,9 @@ export const Info = Schema.Struct({
       policy: Schema.optional(Schema.Literals(["off", "arc"])).annotate({
         description: "Eviction policy: 'off' disables, 'arc' uses Adaptive Replacement Cache with decay and ghost lists",
       }),
+      consolidate: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable offline consolidation: distill session knowledge into a managed AGENTS.md section",
+      }),
     }),
   ),
   experimental: Schema.optional(
