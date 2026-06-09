@@ -4,6 +4,7 @@ export { ContextEvent, ContextRecord, ContextRecordFilter, SemanticNotSupported,
 export { LocalMemoryStore } from "./store-local"
 export { EventLog } from "./event-log"
 export { rebuildProjection } from "./projection"
+export type { ProjectionOptions } from "./projection"
 export {
   StructuredSummary,
   Decision,
@@ -14,4 +15,5 @@ export {
   serializeSummary,
 } from "./summary"
 export { AnchorRegistry, Anchor } from "./anchor"
+export { analyzeLiveness, consolidateEvents } from "./liveness"
 export { Instrumentation, ProbeScore, TokenCount, ProbeType } from "./instrumentation"

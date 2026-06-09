@@ -168,6 +168,9 @@ export const Info = Schema.Struct({
       summary: Schema.optional(Schema.Literals(["off", "structured"])).annotate({
         description: "Summary mode: 'off' uses default blob compaction, 'structured' uses anchored structured summarization",
       }),
+      liveness: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable liveness-based eviction: distinguish causally active items from completed ones",
+      }),
     }),
   ),
   experimental: Schema.optional(
