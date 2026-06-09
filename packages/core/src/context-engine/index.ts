@@ -5,6 +5,7 @@ export { LocalMemoryStore } from "./store-local"
 export { EventLog } from "./event-log"
 export { rebuildProjection } from "./projection"
 export type { ProjectionOptions } from "./projection"
+export { SUMMARY_TEMPLATE } from "./template"
 export {
   StructuredSummary,
   Decision,
