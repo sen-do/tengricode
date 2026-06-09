@@ -160,6 +160,13 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
+  contextEngine: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable the context engine for session-aware context management (default: false)",
+      }),
+    }),
+  ),
   experimental: Schema.optional(
     Schema.Struct({
       disable_paste_summary: Schema.optional(Schema.Boolean),

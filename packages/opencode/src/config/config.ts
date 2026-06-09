@@ -563,6 +563,9 @@ export const layer = Layer.effect(
           result.share = "auto"
         }
 
+        if (Flag.OPENCODE_CONTEXT_ENGINE) {
+          result.contextEngine = { ...result.contextEngine, enabled: true }
+        }
         if (Flag.OPENCODE_DISABLE_AUTOCOMPACT) {
           result.compaction = { ...result.compaction, auto: false }
         }
