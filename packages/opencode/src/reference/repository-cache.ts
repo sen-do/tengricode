@@ -1,3 +1,4 @@
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -316,5 +317,7 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
   Layer.provide(FSUtil.defaultLayer),
   Layer.provide(Git.defaultLayer),
 )
+
+export const node = LayerNode.make(layer, [FSUtil.node, Git.node])
 
 export * as RepositoryCache from "./repository-cache"

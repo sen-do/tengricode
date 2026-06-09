@@ -1,3 +1,4 @@
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import path from "path"
 import { Effect, Context, Layer, Scope } from "effect"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -233,5 +234,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(RepositoryCache.defaultLayer),
   Layer.provide(RuntimeFlags.defaultLayer),
 )
+
+export const node = LayerNode.make(layer, [Config.node, RepositoryCache.node, RuntimeFlags.node])
 
 export * as Reference from "./reference"
