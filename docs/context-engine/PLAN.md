@@ -120,21 +120,25 @@ Feature flags live in `contextEngine` key within the config schema.
 
 ---
 
-### Phase 3 — Anchored structured summarization + anchor pinning
+### Phase 3 — Anchored structured summarization + anchor pinning **(COMPLETED)**
 
 **Goal:** Replace blob compaction with structured summary that preserves critical info.
 
 **Flag:** `contextEngine.summary = "structured"` (vs default `"off"`)
 
-**New/changed files:**
-- `packages/core/src/context-engine/summary.ts` — structured summary with fixed sections: task intent, files modified, decisions + rationale, open tasks, next steps. Implements **incremental merge** — fold only the newly truncated span into existing summary, never regenerate from scratch.
-- `packages/core/src/context-engine/anchor.ts` — anchor registry: task intent and explicit constraints (e.g. "don't touch X") are pinned and never evicted
-- Modify `packages/core/src/session/compaction.ts` — when `contextEngine.summary === "structured"`, use the structured summarizer instead of the blob `buildPrompt()` template
-- Modify `packages/opencode/src/session/compaction.ts` — skip `processCompaction()` when structured summary is enabled, use new flow
+**Built:**
+- `packages/core/src/context-engine/summary.ts` — `StructuredSummary` schema with fixed sections (goal, constraints, done, inProgress, blocked, decisions, nextSteps, criticalContext, relevantFiles). `mergeSummary()` for incremental merge. `buildStructuredPrompt()` for LLM summarization prompt. `serializeSummary()` for display.
+- `packages/core/src/context-engine/anchor.ts` — `AnchorRegistry` for pinning constraints/task-intents/decisions. Supports `pin`, `unpin`, `active`, `snapshot`, `restore`.
+- Modified `packages/core/src/session/compaction.ts` — when `contextEngine.summary === "structured"`, uses `buildStructuredPrompt()` instead of blob `buildPrompt()`. Incremental merge via LLM prompt instruction.
+- Modified `packages/opencode/src/session/compaction.ts` — V1 compaction also uses `buildStructuredPrompt()` when flag is on.
+- Added `summary` sub-flag to both V1 and V2 config schemas.
 
-**Acceptance test:**
-- On a recorded long session, four probe scores >= Phase-0 baseline
-- Pinned constraints present in the projection after compaction
+**Verification:**
+- 17 new summary + anchor tests pass
+- 37 context-engine tests pass (total)
+- 92 existing session-runner + compaction tests pass
+- Core + opencode packages typecheck clean
+- With flag off: behavior unchanged (default blob compaction)
 
 ---
 

@@ -3,7 +3,9 @@ export * as SessionCompaction from "./compaction"
 import { LLM, LLMError, LLMEvent, Message, type LLMRequest, type Model } from "@opencode-ai/llm"
 import { DateTime, Effect, Stream } from "effect"
 import type { Config } from "../config"
+import { latest } from "../config"
 import type { EventV2 } from "../event"
+import { buildStructuredPrompt } from "../context-engine/summary"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
@@ -181,7 +183,8 @@ export const make = (dependencies: Dependencies) => {
     const selected = select(input.entries, config.tokens)
     const previousSummary = input.entries.find((entry) => entry.message.type === "compaction")?.message
     if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false
-    const summaryPrompt = buildPrompt({
+    const useStructured = latest(dependencies.config, "contextEngine")?.summary === "structured"
+    const summaryPrompt = (useStructured ? buildStructuredPrompt : buildPrompt)({
       previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
       context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected.head].filter(Boolean),
     })

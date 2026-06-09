@@ -165,6 +165,9 @@ export const Info = Schema.Struct({
       enabled: Schema.optional(Schema.Boolean).annotate({
         description: "Enable the context engine for session-aware context management (default: false)",
       }),
+      summary: Schema.optional(Schema.Literals(["off", "structured"])).annotate({
+        description: "Summary mode: 'off' uses default blob compaction, 'structured' uses anchored structured summarization",
+      }),
     }),
   ),
   experimental: Schema.optional(

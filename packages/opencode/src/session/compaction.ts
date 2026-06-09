@@ -24,6 +24,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { EventV2 } from "@opencode-ai/core/event"
 import { buildPrompt } from "@opencode-ai/core/session/compaction"
+import { buildStructuredPrompt } from "@opencode-ai/core/context-engine/summary"
 
 export const Event = {
   Compacted: EventV2.define({
@@ -354,7 +355,8 @@ export const layer = Layer.effect(
         { sessionID: input.sessionID },
         { context: [], prompt: undefined },
       )
-      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
+      const promptBuilder = cfg.contextEngine?.summary === "structured" ? buildStructuredPrompt : buildPrompt
+      const nextPrompt = compacting.prompt ?? promptBuilder({ previousSummary, context: compacting.context })
       const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
