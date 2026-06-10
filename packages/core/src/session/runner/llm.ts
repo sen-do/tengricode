@@ -22,6 +22,7 @@ import { QuestionV2 } from "../../question"
 import { SystemContext } from "../../system-context/index"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { SkillGuidance } from "../../skill/guidance"
+import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
@@ -101,6 +102,7 @@ export const layer = Layer.effect(
     const location = yield* Location.Service
     const systemContext = yield* SystemContextRegistry.Service
     const skillGuidance = yield* SkillGuidance.Service
+    const referenceGuidance = yield* ReferenceGuidance.Service
     const config = yield* Config.Service
     const db = (yield* Database.Service).db
     const configEntries = yield* config.entries()
@@ -173,9 +175,9 @@ export const layer = Layer.effect(
 
     const sameModel = Schema.toEquivalence(Schema.UndefinedOr(ModelV2.Ref))
     const loadSystemContext = (agent: AgentV2.Selection) =>
-      Effect.all([systemContext.load(), skillGuidance.load(agent)], { concurrency: "unbounded" }).pipe(
-        Effect.map(SystemContext.combine),
-      )
+      Effect.all([systemContext.load(), skillGuidance.load(agent), referenceGuidance.load()], {
+        concurrency: "unbounded",
+      }).pipe(Effect.map(SystemContext.combine))
 
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
